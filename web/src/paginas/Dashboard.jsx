@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useTickets } from '../contextos/TicketsContext.jsx';
 import { 
   FiPlus, 
   FiTrendingUp, 
@@ -68,20 +69,8 @@ const departments = [
   'Sinistro'
 ];
 
-// Dados mock para demonstração (estes viriam da API/contexto)
-const initialTicketsData = [
-  { id: 'T-1021', type: 'Assistência', department: 'IT', requester: 'Elton Matsinhe', province: 'Maputo Cidade', problem: 'VPN não conecta', status: 'Activo', createdAt: '2025-12-14T09:10:00Z' },
-  { id: 'T-1020', type: 'Requisição', department: 'Comercial', requester: 'Clara Uamusse', province: 'Sofala', problem: 'Requisição de portátil', status: 'Alocados', createdAt: '2025-12-13T15:35:00Z' },
-  { id: 'T-1019', type: 'Assistência', department: 'Sinistro', requester: 'Rafael Mabjaia', province: 'Nampula', problem: 'Erro no ERP', status: 'Fechado', createdAt: '2025-12-12T11:50:00Z' },
-  { id: 'T-1018', type: 'Assistência', department: 'RH', requester: 'Sílvia Macuácua', province: 'Maputo Cidade', problem: 'Email bloqueado', status: 'Activo', createdAt: '2025-12-12T09:30:00Z' },
-  { id: 'T-1017', type: 'Requisição', department: 'Contabilidade', requester: 'Maria João', province: 'Gaza', problem: 'Software contabilístico', status: 'Fechado', createdAt: '2025-12-11T14:20:00Z' },
-  { id: 'T-1016', type: 'Assistência', department: 'Risco e Conformidade', requester: 'Jorge Tembe', province: 'Maputo Província', problem: 'Acesso ao sistema', status: 'Alocados', createdAt: '2025-12-10T11:15:00Z' },
-  { id: 'T-1015', type: 'Requisição', department: 'Subscrição', requester: 'Paulo Sitoi', province: 'Inhambane', problem: 'Equipamento novo', status: 'Activo', createdAt: '2025-12-09T14:45:00Z' },
-  { id: 'T-1014', type: 'Assistência', department: 'Crédit Control', requester: 'Luísa Cuambe', province: 'Sofala', problem: 'Problema de impressora', status: 'Fechado', createdAt: '2025-12-08T10:20:00Z' },
-];
-
 const Dashboard = () => {
-  const [tickets, setTickets] = useState(initialTicketsData);
+  const { tickets, loading: ticketsLoading, error: ticketsError, refresh } = useTickets();
   const [stats, setStats] = useState({});
   const [provinceData, setProvinceData] = useState([]);
   const [departmentData, setDepartmentData] = useState([]);
@@ -143,7 +132,7 @@ const Dashboard = () => {
     const active = tickets.filter(t => t.status === 'Activo').length;
     const alocados = tickets.filter(t => t.status === 'Alocados').length;
     const closed = tickets.filter(t => t.status === 'Fechado').length;
-    const growth = total - initialTicketsData.length;
+    const growth = 0;
     
     setStats({
       total,
@@ -154,10 +143,11 @@ const Dashboard = () => {
       activity: Math.round((closed / total) * 100) || 0
     });
 
-    // Dados por província
+    // Dados por província (a partir dos tickets da API)
     const provinceCount = {};
-    provinces.forEach(province => {
-      provinceCount[province] = tickets.filter(t => t.province === province).length;
+    tickets.forEach((t) => {
+      const p = t.province || '—';
+      provinceCount[p] = (provinceCount[p] || 0) + 1;
     });
     
     const provinceChartData = Object.entries(provinceCount)
@@ -169,8 +159,9 @@ const Dashboard = () => {
 
     // Dados por departamento
     const departmentCount = {};
-    departments.forEach(dept => {
-      departmentCount[dept] = tickets.filter(t => t.department === dept).length;
+    tickets.forEach((t) => {
+      const d = t.department || '—';
+      departmentCount[d] = (departmentCount[d] || 0) + 1;
     });
     
     const departmentChartData = Object.entries(departmentCount)
@@ -256,10 +247,13 @@ const Dashboard = () => {
     return () => observers.forEach(obs => obs.disconnect());
   }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setLoading(true);
-    // Simulação de atualização de dados
-    setTimeout(() => setLoading(false), 1000);
+    try {
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -298,13 +292,19 @@ const Dashboard = () => {
           
           <button
             onClick={handleRefresh}
-            disabled={loading}
+            disabled={loading || ticketsLoading}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all shadow-sm hover:shadow-md disabled:opacity-50"
           >
-            <FiRefreshCw className={`${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Atualizando...' : 'Atualizar Dados'}
+            <FiRefreshCw className={`${loading || ticketsLoading ? 'animate-spin' : ''}`} />
+            {loading || ticketsLoading ? 'Atualizando...' : 'Atualizar Dados'}
           </button>
         </div>
+
+        {ticketsError && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {ticketsError}
+          </div>
+        )}
 
         {/* Banner de boas-vindas e próxima atualização */}
         <div className="mt-4 bg-gradient-to-r from-[#106a37] to-[#0d5a2c] text-white rounded-xl p-4 md:p-6 shadow-lg">

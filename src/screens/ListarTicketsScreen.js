@@ -104,7 +104,7 @@ export default function ListarTicketsScreen({
           </View>
         ) : (
           pageTickets.map((ticket) => (
-            <View key={ticket.id} style={styles.ticketCard}>
+            <View key={String(ticket.apiId ?? ticket.id)} style={styles.ticketCard}>
               {/* Cabeçalho do Ticket */}
               <View style={styles.ticketHeader}>
                 <View style={styles.ticketIdContainer}>
@@ -177,7 +177,7 @@ export default function ListarTicketsScreen({
                 
                 {ticket.status !== 'Fechado' && (
                   <TouchableOpacity
-                    onPress={() => onCloseTicket(ticket.id)}
+                    onPress={() => onCloseTicket(ticket.apiId ?? ticket.id)}
                     style={styles.actionButton}
                   >
                     <Ionicons name="checkmark-circle-outline" size={16} color="#cfd8dc" />
@@ -186,7 +186,7 @@ export default function ListarTicketsScreen({
                 )}
                 
                 <TouchableOpacity
-                  onPress={() => onDeleteTicket(ticket.id)}
+                  onPress={() => onDeleteTicket(ticket.apiId ?? ticket.id)}
                   style={[styles.actionButton, styles.deleteButton]}
                 >
                   <Ionicons name="trash-outline" size={16} color="#ef4444" />

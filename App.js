@@ -12,5 +12,5 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  return <DashboardScreen user={session} onLogout={handleLogout} />;
+  return <DashboardScreen session={session} onLogout={handleLogout} />;
 }

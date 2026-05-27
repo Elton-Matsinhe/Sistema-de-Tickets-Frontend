@@ -15,8 +15,10 @@ import {
   View,
   Dimensions,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { loginApi } from '../services/api.js';
 
 const { width, height } = Dimensions.get('window');
 const PRIMARY_COLOR = '#106a37';
@@ -56,16 +58,7 @@ export default function LoginScreen({ onLogin }) {
   const shapesOpacity = useRef(new Animated.Value(0.03)).current;
   const linesOpacity = useRef(new Animated.Value(0.02)).current;
 
-  const users = useMemo(
-    () =>
-      [
-        'Antonio Zimila',
-        'Edna Mavie',
-        'Elton Matsinhe',
-        'Octavio Manhiça',
-      ].sort(),
-    []
-  );
+  const users = useMemo(() => ['Administrador', 'Técnico'], []);
 
   // Animação de pulsação do gradiente
   useEffect(() => {
@@ -228,10 +221,8 @@ export default function LoginScreen({ onLogin }) {
 
   const userEmails = useMemo(
     () => ({
-      'Antonio Zimila': 'antonio.zimila@imperialinsurance-mz.com',
-      'Edna Mavie': 'edna.mavie@imperialinsurance-mz.com',
-      'Elton Matsinhe': 'elton.matsinhe@imperialinsurance-mz.com',
-      'Octavio Manhiça': 'octavio.manhica@imperialinsurance-mz.com',
+      Administrador: 'admin@empresa.co.mz',
+      Técnico: 'tecnico1@empresa.co.mz',
     }),
     []
   );
@@ -242,12 +233,14 @@ export default function LoginScreen({ onLogin }) {
     setUserListOpen(false);
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (isLoggingIn) return;
-    
+    if (!email.trim() || !password) {
+      Alert.alert('Atenção', 'Informe email e senha.');
+      return;
+    }
+
     setIsLoggingIn(true);
-    
-    // Animação simples de escala do botão (sem rotate para evitar erros)
     Animated.sequence([
       Animated.spring(buttonScale, {
         toValue: 0.95,
@@ -259,16 +252,19 @@ export default function LoginScreen({ onLogin }) {
       }),
     ]).start();
 
-    // Simulação de login
-    setTimeout(() => {
-      setIsLoggingIn(false);
+    try {
+      const data = await loginApi(email.trim(), password);
       if (onLogin) {
         onLogin({
-          name: selectedUser || 'Visitante',
-          email: email || 'sem-email@imperialinsurance-mz.com',
+          token: data.token,
+          usuario: data.usuario,
         });
       }
-    }, 2000);
+    } catch (e) {
+      Alert.alert('Login falhou', e.message || 'Credenciais inválidas');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   // Interpolações

@@ -3,7 +3,7 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import Footer from './Footer';
 
-const Layout = ({ children }) => {
+const Layout = ({ children, user, onLogout }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true); // Alterado para true por padrão
 
   const toggleSidebar = () => {
@@ -17,7 +17,12 @@ const Layout = ({ children }) => {
       <div className={`flex-1 flex flex-col transition-all duration-300 ${
         sidebarOpen ? 'lg:pl-64' : 'lg:pl-20'
       }`}>
-        <Header onToggleMenu={toggleSidebar} isMenuOpen={sidebarOpen} />
+        <Header
+          onToggleMenu={toggleSidebar}
+          isMenuOpen={sidebarOpen}
+          user={user}
+          onLogout={onLogout}
+        />
         
         <main className="flex-1 p-4 lg:p-6">
           {children}

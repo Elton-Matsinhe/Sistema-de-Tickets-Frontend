@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useTickets } from '../contextos/TicketsContext.jsx';
+import { useAuth } from '../contextos/AuthContext.jsx';
+import { apiFetch } from '../lib/api.js';
 import { 
   FiSearch, 
   FiFilter, 
@@ -35,292 +38,9 @@ import {
 const BRAND_GREEN = '#106a37';
 const BRAND_GREEN_LIGHT = '#2e8b57';
 
-// Dados mock de tickets (15 tickets para paginação)
-const initialTicketsData = [
-  { 
-    id: 'T-1021', 
-    type: 'Assistência', 
-    department: 'Departamento de IT', 
-    requester: 'Elton Matsinhe', 
-    province: 'Maputo Cidade', 
-    problem: 'VPN não conecta', 
-    status: 'Activo', 
-    createdAt: '2025-12-14T09:10:00Z', 
-    description: 'Problema de conexão VPN para acesso remoto aos servidores da empresa. O colaborador não consegue aceder aos recursos internos desde às 08:30.', 
-    observation: 'Precisa ser resolvido antes das 14h para reunião importante com clientes internacionais.',
-    assignedTo: null,
-    closedAt: null,
-    email: 'elton.matsinhe@imperialinsurance-mz.com',
-    phone: '+258 841 644 096',
-    priority: 'Alta',
-    category: 'Rede'
-  },
-  { 
-    id: 'T-1020', 
-    type: 'Requisição', 
-    department: 'Comercial', 
-    requester: 'Clara Uamusse', 
-    province: 'Sofala', 
-    problem: 'Requisição de portátil', 
-    status: 'Alocados', 
-    createdAt: '2025-12-13T15:35:00Z', 
-    description: 'Solicitação de laptop novo modelo Dell Latitude 5540 para viagens de trabalho. Especificações: i7, 16GB RAM, SSD 512GB, tela Full HD.', 
-    observation: 'Modelo leve para viagens frequentes. Necessário até final do mês.',
-    assignedTo: 'Antonio Zimila',
-    assignedAt: '2025-12-13T16:20:00Z',
-    closedAt: null,
-    email: 'clara.uamusse@imperialinsurance-mz.com',
-    phone: '+258 842 123 456',
-    priority: 'Média',
-    category: 'Hardware'
-  },
-  { 
-    id: 'T-1019', 
-    type: 'Assistência', 
-    department: 'Sinistro', 
-    requester: 'Rafael Mabjaia', 
-    province: 'Nampula', 
-    problem: 'Erro no ERP', 
-    status: 'Fechado', 
-    createdAt: '2025-12-12T11:50:00Z', 
-    description: 'Erro no sistema ERP ao processar sinistros - mensagem "Erro de conexão com base de dados" aparece quando tenta gerar relatórios semanais.', 
-    observation: 'Corrigido com patch de atualização. Backup realizado antes da intervenção.',
-    assignedTo: 'Octavio Manhiça',
-    assignedAt: '2025-12-12T12:30:00Z',
-    closedAt: '2025-12-12T15:45:00Z',
-    email: 'rafael.mabjaia@imperialinsurance-mz.com',
-    phone: '+258 843 789 012',
-    priority: 'Alta',
-    category: 'Software'
-  },
-  { 
-    id: 'T-1018', 
-    type: 'Assistência', 
-    department: 'RH', 
-    requester: 'Sílvia Macuácua', 
-    province: 'Maputo Cidade', 
-    problem: 'Email bloqueado', 
-    status: 'Activo', 
-    createdAt: '2025-12-12T09:30:00Z', 
-    description: 'Conta de email corporativo bloqueada por suspeita de atividade de phishing. Sistema de segurança detectou envio massivo de emails não autorizados.', 
-    observation: 'Urgente - precisa acessar email para reunião às 10h com diretoria. Já verificada autenticidade do usuário.',
-    assignedTo: null,
-    closedAt: null,
-    email: 'silvia.macuacua@imperialinsurance-mz.com',
-    phone: '+258 844 345 678',
-    priority: 'Crítica',
-    category: 'Segurança'
-  },
-  { 
-    id: 'T-1017', 
-    type: 'Requisição', 
-    department: 'Contabilidade', 
-    requester: 'Maria João', 
-    province: 'Gaza', 
-    problem: 'Software contabilístico', 
-    status: 'Fechado', 
-    createdAt: '2025-12-11T14:20:00Z', 
-    description: 'Atualização de software contabilístico para versão 2026. Necessária instalação e migração de dados dos últimos 5 anos.', 
-    observation: 'Concluído com sucesso. Backup verificado e treinamento realizado com a equipa.',
-    assignedTo: 'Edna Mavie',
-    assignedAt: '2025-12-11T14:45:00Z',
-    closedAt: '2025-12-11T17:30:00Z',
-    email: 'maria.joao@imperialinsurance-mz.com',
-    phone: '+258 845 901 234',
-    priority: 'Média',
-    category: 'Software'
-  },
-  { 
-    id: 'T-1016', 
-    type: 'Assistência', 
-    department: 'Risco e Conformidade', 
-    requester: 'Jorge Tembe', 
-    province: 'Maputo Província', 
-    problem: 'Acesso ao sistema', 
-    status: 'Alocados', 
-    createdAt: '2025-12-10T11:15:00Z', 
-    description: 'Problema de acesso ao sistema de compliance para geração de relatórios trimestrais. Credenciais não funcionam após alteração de senha.', 
-    observation: 'Atribuído à equipa de segurança para verificação de permissões.',
-    assignedTo: 'Cremildo Dava',
-    assignedAt: '2025-12-10T11:45:00Z',
-    closedAt: null,
-    email: 'jorge.tembe@imperialinsurance-mz.com',
-    phone: '+258 846 567 890',
-    priority: 'Alta',
-    category: 'Segurança'
-  },
-  { 
-    id: 'T-1015', 
-    type: 'Requisição', 
-    department: 'Subscrição', 
-    requester: 'Paulo Sitoi', 
-    province: 'Inhambane', 
-    problem: 'Equipamento novo', 
-    status: 'Activo', 
-    createdAt: '2025-12-09T14:45:00Z', 
-    description: 'Solicitação de equipamento de escritório: 2 monitores 24", teclado e mouse sem fio, e cadeira ergonómica para nova contratação.', 
-    observation: 'Orçamento aprovado pelo departamento financeiro.',
-    assignedTo: null,
-    closedAt: null,
-    email: 'paulo.sitoi@imperialinsurance-mz.com',
-    phone: '+258 847 123 789',
-    priority: 'Baixa',
-    category: 'Hardware'
-  },
-  { 
-    id: 'T-1014', 
-    type: 'Assistência', 
-    department: 'Crédit Control', 
-    requester: 'Luísa Cuambe', 
-    province: 'Sofala', 
-    problem: 'Problema de impressora', 
-    status: 'Fechado', 
-    createdAt: '2025-12-08T10:20:00Z', 
-    description: 'Impressora HP LaserJet não responde na rede do departamento. Apresenta erro de conexão constante.', 
-    observation: 'Substituída por novo equipamento. Impressora antiga enviada para manutenção.',
-    assignedTo: 'Elton Matsinhe',
-    assignedAt: '2025-12-08T11:10:00Z',
-    closedAt: '2025-12-08T16:30:00Z',
-    email: 'luisa.cuambe@imperialinsurance-mz.com',
-    phone: '+258 848 456 123',
-    priority: 'Média',
-    category: 'Hardware'
-  },
-  { 
-    id: 'T-1013', 
-    type: 'Assistência', 
-    department: 'Júridico', 
-    requester: 'Tatiana Cumbe', 
-    province: 'Maputo Cidade', 
-    problem: 'Acesso à base de dados', 
-    status: 'Alocados', 
-    createdAt: '2025-12-07T16:30:00Z', 
-    description: 'Restrições de acesso à base de dados legal. Permissões insuficientes para consultar processos recentes.', 
-    observation: 'Em análise pela equipa de segurança. Necessária aprovação do diretor jurídico.',
-    assignedTo: 'Octavio Manhiça',
-    assignedAt: '2025-12-08T09:15:00Z',
-    closedAt: null,
-    email: 'tatiana.cumbe@imperialinsurance-mz.com',
-    phone: '+258 849 789 456',
-    priority: 'Alta',
-    category: 'Segurança'
-  },
-  { 
-    id: 'T-1012', 
-    type: 'Requisição', 
-    department: 'Comercial', 
-    requester: 'Bento Dique', 
-    province: 'Manica', 
-    problem: 'Software CRM', 
-    status: 'Activo', 
-    createdAt: '2025-12-06T09:15:00Z', 
-    description: 'Licenciamento de software CRM adicional para nova equipa comercial. 5 novas licenças necessárias.', 
-    observation: 'Aguardando aprovação financeira. Orçamento enviado para análise.',
-    assignedTo: null,
-    closedAt: null,
-    email: 'bento.dique@imperialinsurance-mz.com',
-    phone: '+258 850 123 456',
-    priority: 'Média',
-    category: 'Software'
-  },
-  { 
-    id: 'T-1011', 
-    type: 'Assistência', 
-    department: 'RH', 
-    requester: 'Nuno Quive', 
-    province: 'Tete', 
-    problem: 'Problema de rede', 
-    status: 'Fechado', 
-    createdAt: '2025-12-05T11:45:00Z', 
-    description: 'Falha de rede no departamento de RH. Switch da sala apresenta luz vermelha e ninguém tem acesso à internet.', 
-    observation: 'Resolvido - cabo de rede substituído. Testes de conexão realizados com sucesso.',
-    assignedTo: 'Antonio Zimila',
-    assignedAt: '2025-12-05T12:30:00Z',
-    closedAt: '2025-12-05T15:20:00Z',
-    email: 'nuno.quive@imperialinsurance-mz.com',
-    phone: '+258 851 654 321',
-    priority: 'Alta',
-    category: 'Rede'
-  },
-  { 
-    id: 'T-1010', 
-    type: 'Assistência', 
-    department: 'Departamento de IT', 
-    requester: 'Antonio Zimila', 
-    province: 'Zambézia', 
-    problem: 'VPN não conecta', 
-    status: 'Alocados', 
-    createdAt: '2025-12-04T14:20:00Z', 
-    description: 'Configuração de VPN para novo colaborador remoto. Sistema não aceita as credenciais fornecidas.', 
-    observation: 'Em progresso. Contactado fornecedor de VPN para suporte técnico.',
-    assignedTo: 'Edna Mavie',
-    assignedAt: '2025-12-04T15:00:00Z',
-    closedAt: null,
-    email: 'antonio.zimila@imperialinsurance-mz.com',
-    phone: '+258 852 987 654',
-    priority: 'Média',
-    category: 'Rede'
-  },
-  { 
-    id: 'T-1009', 
-    type: 'Requisição', 
-    department: 'Contabilidade', 
-    requester: 'Gerson Langa', 
-    province: 'Nampula', 
-    problem: 'Scanner documental', 
-    status: 'Fechado', 
-    createdAt: '2025-12-03T10:30:00Z', 
-    description: 'Solicitação de scanner de alta resolução para digitalização de documentos fiscais. Scanner atual apresenta baixa qualidade.', 
-    observation: 'Entregue e instalado. Treinamento realizado com equipa de contabilidade.',
-    assignedTo: 'Cremildo Dava',
-    assignedAt: '2025-12-03T11:15:00Z',
-    closedAt: '2025-12-03T16:45:00Z',
-    email: 'gerson.langa@imperialinsurance-mz.com',
-    phone: '+258 853 321 987',
-    priority: 'Baixa',
-    category: 'Hardware'
-  },
-  { 
-    id: 'T-1008', 
-    type: 'Assistência', 
-    department: 'Sinistro', 
-    requester: 'Jéssica Uamusse', 
-    province: 'Cabo Delgado', 
-    problem: 'Erro no ERP', 
-    status: 'Activo', 
-    createdAt: '2025-12-02T13:15:00Z', 
-    description: 'Erro ao gerar relatórios de sinistros no módulo de análise. Sistema apresenta mensagem de "Memória insuficiente".', 
-    observation: 'Prioridade alta. Relatórios necessários para reunião com seguradora.',
-    assignedTo: null,
-    closedAt: null,
-    email: 'jessica.uamusse@imperialinsurance-mz.com',
-    phone: '+258 854 654 987',
-    priority: 'Alta',
-    category: 'Software'
-  },
-  { 
-    id: 'T-1007', 
-    type: 'Requisição', 
-    department: 'Subscrição', 
-    requester: 'Ângela Lázaro', 
-    province: 'Niassa', 
-    problem: 'Monitor adicional', 
-    status: 'Alocados', 
-    createdAt: '2025-12-01T08:45:00Z', 
-    description: 'Solicitação de segundo monitor 27" para trabalho com múltiplas planilhas simultaneamente. Monitor atual é de 21".', 
-    observation: 'Em processo de aquisição. Orçamento aprovado pelo gestor do departamento.',
-    assignedTo: 'Elton Matsinhe',
-    assignedAt: '2025-12-01T10:20:00Z',
-    closedAt: null,
-    email: 'angela.lazaro@imperialinsurance-mz.com',
-    phone: '+258 855 789 123',
-    priority: 'Baixa',
-    category: 'Hardware'
-  },
-];
-
 const ListarTickets = () => {
-  const [tickets, setTickets] = useState(initialTicketsData);
+  const { tickets, refresh } = useTickets();
+  const { token } = useAuth();
   const [busca, setBusca] = useState('');
   const [ticketSelecionado, setTicketSelecionado] = useState(null);
   const [mostrarDetalhes, setMostrarDetalhes] = useState(false);
@@ -395,6 +115,7 @@ const ListarTickets = () => {
     switch(status) {
       case 'Activo': return 'bg-red-100 text-red-800';
       case 'Alocados': return 'bg-amber-100 text-amber-800';
+      case 'Em andamento': return 'bg-orange-100 text-orange-800';
       case 'Fechado': return 'bg-green-100 text-green-800';
       default: return 'bg-gray-100 text-gray-800';
     }
@@ -405,6 +126,7 @@ const ListarTickets = () => {
     switch(status) {
       case 'Activo': return <FiAlertCircle className="inline mr-1" />;
       case 'Alocados': return <FiClock className="inline mr-1" />;
+      case 'Em andamento': return <FiClock className="inline mr-1" />;
       case 'Fechado': return <FiCheckCircle className="inline mr-1" />;
       default: return <FiClock className="inline mr-1" />;
     }
@@ -435,14 +157,14 @@ const ListarTickets = () => {
           case 'problema':
             return ticket.problem.toLowerCase().includes(termoBusca);
           case 'descricao':
-            return ticket.description.toLowerCase().includes(termoBusca);
+            return (ticket.description || '').toLowerCase().includes(termoBusca);
           case 'todos':
           default:
             return (
               ticket.id.toLowerCase().includes(termoBusca) ||
               ticket.requester.toLowerCase().includes(termoBusca) ||
               ticket.problem.toLowerCase().includes(termoBusca) ||
-              ticket.description.toLowerCase().includes(termoBusca) ||
+              (ticket.description || '').toLowerCase().includes(termoBusca) ||
               ticket.department.toLowerCase().includes(termoBusca) ||
               ticket.province.toLowerCase().includes(termoBusca)
             );
@@ -508,7 +230,9 @@ const ListarTickets = () => {
   const estatisticas = {
     total: ticketsFiltrados.length,
     ativos: ticketsFiltrados.filter(t => t.status === 'Activo').length,
-    alocados: ticketsFiltrados.filter(t => t.status === 'Alocados').length,
+    alocados: ticketsFiltrados.filter(
+      (t) => t.status === 'Alocados' || t.status === 'Em andamento'
+    ).length,
     fechados: ticketsFiltrados.filter(t => t.status === 'Fechado').length,
   };
 
@@ -578,20 +302,43 @@ const ListarTickets = () => {
     setMostrarDetalhes(true);
   };
 
-  const handleExcluirTicket = (id) => {
-    if (window.confirm('Tem certeza que deseja excluir este ticket?')) {
-      setTickets(tickets.filter(ticket => ticket.id !== id));
-      setSelecionados(selecionados.filter(ticketId => ticketId !== id));
+  const handleExcluirTicket = async (id) => {
+    if (!window.confirm('Tem certeza que deseja excluir este ticket?')) return;
+    const ticket = tickets.find((t) => t.id === id || String(t.apiId) === String(id));
+    if (!ticket?.apiId) {
+      window.alert('Ticket sem referência na API.');
+      return;
+    }
+    try {
+      await apiFetch(`/tickets/${ticket.apiId}`, { method: 'DELETE', token });
+      await refresh();
+      setSelecionados((prev) => prev.filter((ticketId) => ticketId !== id));
+    } catch (e) {
+      window.alert(e.message || 'Erro ao eliminar');
     }
   };
 
-  const handleExcluirSelecionados = () => {
+  const handleExcluirSelecionados = async () => {
     if (selecionados.length === 0) return;
-    
-    if (window.confirm(`Tem certeza que deseja excluir ${selecionados.length} ticket(s) selecionado(s)?`)) {
-      setTickets(tickets.filter(ticket => !selecionados.includes(ticket.id)));
+    if (
+      !window.confirm(
+        `Tem certeza que deseja excluir ${selecionados.length} ticket(s) selecionado(s)?`
+      )
+    ) {
+      return;
+    }
+    try {
+      for (const id of selecionados) {
+        const ticket = tickets.find((t) => t.id === id || String(t.apiId) === String(id));
+        if (ticket?.apiId) {
+          await apiFetch(`/tickets/${ticket.apiId}`, { method: 'DELETE', token });
+        }
+      }
+      await refresh();
       setSelecionados([]);
       setSelecionarTodos(false);
+    } catch (e) {
+      window.alert(e.message || 'Erro ao eliminar');
     }
   };
 
@@ -757,6 +504,7 @@ const ListarTickets = () => {
               >
                 <option value="todos">Todos os status</option>
                 <option value="Activo">Activo</option>
+                <option value="Em andamento">Em andamento</option>
                 <option value="Alocados">Alocados</option>
                 <option value="Fechado">Fechado</option>
               </select>
@@ -1181,7 +929,7 @@ const ListarTickets = () => {
                     </span>
                     <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
                       ticketSelecionado.status === 'Activo' ? 'bg-red-200 text-red-800' :
-                      ticketSelecionado.status === 'Alocados' ? 'bg-amber-200 text-amber-800' :
+                      ticketSelecionado.status === 'Alocados' || ticketSelecionado.status === 'Em andamento' ? 'bg-amber-200 text-amber-800' :
                       'bg-green-200 text-green-800'
                     }`}>
                       {ticketSelecionado.status}

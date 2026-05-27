@@ -14,8 +14,22 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  fetchTickets,
+  fetchFormData,
+  createTicketApi,
+  alocarTicketApi,
+  fecharTicketApi,
+  deleteTicketApi,
+} from '../services/api.js';
+import {
+  mapApiTicketToMobile,
+  buildDepartmentsMap,
+  tiposNomesPorCategoria,
+} from '../utils/ticketMap.js';
 import EmitirTicketScreen from './EmitirTicketScreen';
 import ListarTicketsScreen from './ListarTicketsScreen';
 import RelatoriosScreen from './RelatoriosScreen';
@@ -409,11 +423,20 @@ const SimpleChatBot = ({ user, onNavigate, onClose }) => {
 // ============================================
 // DashboardScreen Principal
 // ============================================
-export default function DashboardScreen({ user, onLogout }) {
+export default function DashboardScreen({ session, onLogout }) {
+  const token = session?.token;
+  const user = session?.usuario
+    ? { name: session.usuario.nome, email: session.usuario.email }
+    : { name: 'Visitante', email: '' };
+
   const [profileOpen, setProfileOpen] = useState(false);
   const [view, setView] = useState('home');
   const [ticketStep, setTicketStep] = useState(1);
-  const [tickets, setTickets] = useState(initialTicketsData);
+  const [tickets, setTickets] = useState([]);
+  const [apiForm, setApiForm] = useState(null);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [deptMapForForm, setDeptMapForForm] = useState(null);
+  const [provinceListDyn, setProvinceListDyn] = useState(null);
   const [filter, setFilter] = useState('Todos');
   const [page, setPage] = useState(1);
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -467,6 +490,47 @@ export default function DashboardScreen({ user, onLogout }) {
     province: '',
     observation: '',
   });
+
+  const loadRemoteData = async () => {
+    if (!token) return;
+    setTicketsLoading(true);
+    try {
+      const [lista, form] = await Promise.all([
+        fetchTickets(token),
+        fetchFormData(token),
+      ]);
+      setApiForm(form);
+      setTickets(Array.isArray(lista) ? lista.map(mapApiTicketToMobile) : []);
+      if (form?.solicitantes?.length) {
+        setDeptMapForForm(buildDepartmentsMap(form.solicitantes));
+      }
+      if (form?.provincias?.length) {
+        setProvinceListDyn(form.provincias.map((p) => p.nome));
+      }
+    } catch (e) {
+      Alert.alert('API', e.message || 'Não foi possível carregar os dados.');
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRemoteData();
+  }, [token]);
+
+  const departmentsForEmit = deptMapForForm || departments;
+  const provincesForEmit = provinceListDyn || provinces;
+
+  const problemOptionsAssist = useMemo(
+    () => tiposNomesPorCategoria(apiForm?.tipos_problema, 'assistencia'),
+    [apiForm]
+  );
+  const problemOptionsReq = useMemo(
+    () => tiposNomesPorCategoria(apiForm?.tipos_problema, 'requisicao'),
+    [apiForm]
+  );
+  const problemOptionsForEmit =
+    ticketForm.type === 'Assistência' ? problemOptionsAssist : problemOptionsReq;
 
   // Animação de pulsação do botão do chatbot
   useEffect(() => {
@@ -663,13 +727,16 @@ export default function DashboardScreen({ user, onLogout }) {
     const activos = tickets.filter((t) => t.status === 'Activo').length;
     const andamento = tickets.filter((t) => t.status === 'Em andamento').length;
     const fechados = tickets.filter((t) => t.status === 'Fechado').length;
-    return { total, activos, andamento, fechados };
+    const alocados = tickets.filter((t) => t.status === 'Alocado').length;
+    return { total, activos, andamento, fechados, alocados };
   }, [tickets]);
 
   const availableAssignees = useMemo(() => {
     const current = user?.name;
-    return colleagues.filter((c) => c !== current);
-  }, [user]);
+    const fromApi = apiForm?.tecnicos?.map((t) => t.nome) || [];
+    const base = fromApi.length ? fromApi : colleagues;
+    return base.filter((c) => c && c !== current);
+  }, [user, apiForm]);
 
   const resetForm = () =>
     setTicketForm({
@@ -683,68 +750,148 @@ export default function DashboardScreen({ user, onLogout }) {
       observation: '',
     });
 
-  const handleCreateTicket = () => {
+  const handleCreateTicket = async () => {
+    if (!token || !apiForm) {
+      Alert.alert('Atenção', 'Aguarde o carregamento dos dados do formulário.');
+      return;
+    }
     if (!ticketForm.department || !ticketForm.requester) return;
-    if (ticketForm.type === 'Assistência' && !ticketForm.problem) return;
-    if (ticketForm.type === 'Requisição' && !ticketForm.description) return;
 
-    const newTicket = {
-      id: `T-${Math.floor(Math.random() * 9000 + 1000)}`,
-      type: ticketForm.type,
-      department: ticketForm.department,
-      requester: ticketForm.requester,
-      province: ticketForm.province || '—',
-      problem:
-        ticketForm.type === 'Assistência'
-          ? ticketForm.problem
-          : ticketForm.description || 'Requisição de material',
-      status: 'Activo',
-      createdAt: new Date().toISOString(),
-      observation: ticketForm.observation || '',
-      createdBy: user?.name || 'Visitante',
-    };
+    const cat = ticketForm.type === 'Assistência' ? 'assistencia' : 'requisicao';
+    if (cat === 'assistencia' && !ticketForm.problem) return;
+    const reqOpts = tiposNomesPorCategoria(apiForm.tipos_problema, 'requisicao');
+    if (cat === 'requisicao') {
+      if (reqOpts.length) {
+        if (!ticketForm.problem) return;
+      } else if (!ticketForm.description?.trim()) return;
+    }
 
-    setTickets((prev) => [newTicket, ...prev]);
-    setSelectedTicket(newTicket);
-    setTicketStep(1);
-    resetForm();
-    setFilter('Todos');
-    setPage(1);
-    setView('listar');
-  };
-
-  const handleAssign = () => {
-    if (!selectedTicket || !assignTo) return;
-    setTickets((prev) =>
-      prev.map((t) =>
-        t.id === selectedTicket.id
-          ? { ...t, assignedTo: assignTo, status: 'Em andamento' }
-          : t
-      )
+    const solicitante = apiForm.solicitantes.find(
+      (s) =>
+        s.nome === ticketForm.requester &&
+        s.Departamento?.nome === ticketForm.department
     );
-    setSelectedTicket((prev) => (prev ? { ...prev, assignedTo: assignTo, status: 'Em andamento' } : prev));
-    setAssignTo('');
-  };
+    if (!solicitante) {
+      Alert.alert(
+        'Erro',
+        'Solicitante não encontrado. Escolha um departamento e nome existentes na base.'
+      );
+      return;
+    }
 
-  const handleCloseTicket = (ticketId) => {
-    setTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: 'Fechado' } : t))
-    );
-    if (selectedTicket?.id === ticketId) {
-      setSelectedTicket((prev) => (prev ? { ...prev, status: 'Fechado' } : prev));
+    let tipoProblema = null;
+    if (cat === 'assistencia') {
+      tipoProblema = apiForm.tipos_problema.find(
+        (t) => t.nome === ticketForm.problem && t.categoria === 'assistencia'
+      );
+    } else if (reqOpts.length) {
+      tipoProblema = apiForm.tipos_problema.find(
+        (t) => t.nome === ticketForm.problem && t.categoria === 'requisicao'
+      );
+    } else {
+      tipoProblema = apiForm.tipos_problema.find((t) => t.categoria === 'requisicao');
+    }
+    if (!tipoProblema) {
+      Alert.alert('Erro', 'Tipo de problema / requisição não encontrado no servidor.');
+      return;
+    }
+
+    let descPersonalizada = null;
+    if (cat === 'requisicao' && !reqOpts.length) {
+      descPersonalizada = ticketForm.description?.trim() || null;
+    } else if (tipoProblema.requer_descricao) {
+      descPersonalizada =
+        ticketForm.description?.trim() ||
+        ticketForm.observation?.trim() ||
+        '—';
+    }
+
+    try {
+      const res = await createTicketApi(token, {
+        tipo: cat,
+        solicitante_id: solicitante.id,
+        tipo_problema_id: tipoProblema.id,
+        descricao_problema_personalizada: descPersonalizada,
+        observacao: ticketForm.observation?.trim() || undefined,
+        prioridade: 'media',
+      });
+      const novo = mapApiTicketToMobile(res.ticket);
+      setTickets((prev) => [novo, ...prev]);
+      setSelectedTicket(novo);
+      setTicketStep(1);
+      resetForm();
+      setFilter('Todos');
+      setPage(1);
+      setView('listar');
+    } catch (e) {
+      Alert.alert('Erro ao criar ticket', e.message);
     }
   };
 
-  const handleDeleteTicket = (ticketId) => {
-    setTickets((prev) => prev.filter((t) => t.id !== ticketId));
-    if (selectedTicket?.id === ticketId) setSelectedTicket(null);
+  const handleAssign = async () => {
+    if (!selectedTicket || !assignTo || !token || !apiForm) return;
+    const tec = apiForm.tecnicos.find((x) => x.nome === assignTo);
+    if (!tec) {
+      Alert.alert('Erro', 'Técnico não encontrado.');
+      return;
+    }
+    try {
+      await alocarTicketApi(token, selectedTicket.apiId, tec.id);
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.apiId === selectedTicket.apiId
+            ? { ...t, assignedTo: assignTo, status: 'Alocado' }
+            : t
+        )
+      );
+      setSelectedTicket((prev) =>
+        prev && prev.apiId === selectedTicket.apiId
+          ? { ...prev, assignedTo: assignTo, status: 'Alocado' }
+          : prev
+      );
+      setAssignTo('');
+    } catch (e) {
+      Alert.alert('Erro', e.message);
+    }
+  };
+
+  const handleCloseTicket = async (apiId) => {
+    if (!token) return;
+    try {
+      await fecharTicketApi(token, apiId);
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.apiId === apiId
+            ? { ...t, status: 'Fechado', closedAt: new Date().toISOString() }
+            : t
+        )
+      );
+      if (selectedTicket?.apiId === apiId) {
+        setSelectedTicket((prev) =>
+          prev ? { ...prev, status: 'Fechado', closedAt: new Date().toISOString() } : prev
+        );
+      }
+    } catch (e) {
+      Alert.alert('Erro', e.message);
+    }
+  };
+
+  const handleDeleteTicket = async (apiId) => {
+    if (!token) return;
+    try {
+      await deleteTicketApi(token, apiId);
+      setTickets((prev) => prev.filter((t) => t.apiId !== apiId));
+      if (selectedTicket?.apiId === apiId) setSelectedTicket(null);
+    } catch (e) {
+      Alert.alert('Erro', e.message);
+    }
   };
 
   const handleClearCache = () => {
-    setTickets(initialTicketsData);
     setSelectedTicket(null);
     setFilter('Todos');
     setPage(1);
+    loadRemoteData();
   };
 
   const renderBadge = (status) => {
@@ -752,6 +899,7 @@ export default function DashboardScreen({ user, onLogout }) {
       Activo: '#22c55e',
       'Em andamento': '#f97316',
       Fechado: '#9ca3af',
+      Alocado: '#3b82f6',
     };
     return (
       <View style={[styles.badge, { backgroundColor: map[status] || '#9ca3af' }]}>
@@ -1007,8 +1155,9 @@ export default function DashboardScreen({ user, onLogout }) {
               setTicketStep={setTicketStep}
               filteredRequesters={filteredRequesters}
               assistenciaIssues={assistenciaIssues}
-              provinces={provinces}
-              departments={departments}
+              problemOptions={problemOptionsForEmit}
+              provinces={provincesForEmit}
+              departments={departmentsForEmit}
               onSubmit={handleCreateTicket}
               onBack={() => setView('home')}
             />

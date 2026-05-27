@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FiBell, 
   FiSearch, 
@@ -23,8 +23,9 @@ import {
   FiUsers
 } from 'react-icons/fi';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTickets } from '../../contextos/TicketsContext.jsx';
 
-const Header = ({ onToggleMenu, isMenuOpen }) => {
+const Header = ({ onToggleMenu, isMenuOpen, user, onLogout }) => {
   const [horaAtual, setHoraAtual] = useState('');
   const [busca, setBusca] = useState('');
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
@@ -36,29 +37,38 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Dados fictícios do dashboard (mesmas informações que estariam no dashboard)
-  const dashboardData = {
-    tickets: [
-      { id: 'T-1021', tipo: 'Assistência', departamento: 'IT', solicitante: 'Elton Matsinhe', provincia: 'Maputo Cidade', problema: 'VPN não conecta', status: 'Activo', data: '2025-12-14T09:10:00Z' },
-      { id: 'T-1020', tipo: 'Requisição', departamento: 'Comercial', solicitante: 'Clara Uamusse', provincia: 'Sofala', problema: 'Requisição de portátil', status: 'Alocados', data: '2025-12-13T15:35:00Z' },
-      { id: 'T-1019', tipo: 'Assistência', departamento: 'Sinistro', solicitante: 'Rafael Mabjaia', provincia: 'Nampula', problema: 'Erro no ERP', status: 'Fechado', data: '2025-12-12T11:50:00Z' },
-      { id: 'T-1018', tipo: 'Assistência', departamento: 'RH', solicitante: 'Sílvia Macuácua', provincia: 'Maputo Cidade', problema: 'Email bloqueado', status: 'Activo', data: '2025-12-12T09:30:00Z' },
-    ],
-    estatisticas: {
-      total: 42,
-      activos: 15,
-      alocados: 8,
-      fechados: 19,
-      taxaConclusao: 45
-    },
-    departamentos: [
-      { nome: 'IT', tickets: 12 },
-      { nome: 'Comercial', tickets: 8 },
-      { nome: 'RH', tickets: 6 },
-      { nome: 'Sinistro', tickets: 5 },
-      { nome: 'Contabilidade', tickets: 4 }
-    ]
-  };
+  const { tickets } = useTickets();
+
+  const searchTickets = useMemo(
+    () =>
+      tickets.map((t) => ({
+        id: t.id,
+        tipo: t.type,
+        departamento: t.department,
+        solicitante: t.requester,
+        provincia: t.province,
+        problema: t.problem,
+        status: t.status,
+        data: t.createdAt,
+      })),
+    [tickets]
+  );
+
+  const departamentosBusca = useMemo(() => {
+    const m = {};
+    tickets.forEach((t) => {
+      const d = t.department || '—';
+      m[d] = (m[d] || 0) + 1;
+    });
+    return Object.entries(m).map(([nome, c]) => ({ nome, tickets: c }));
+  }, [tickets]);
+
+  const estatisticasBusca = useMemo(() => {
+    const total = tickets.length;
+    const activos = tickets.filter((t) => t.status === 'Activo').length;
+    const fechados = tickets.filter((t) => t.status === 'Fechado').length;
+    return { total, activos, fechados };
+  }, [tickets]);
 
   // Gerar saudação baseada no horário (fuso de Maputo, UTC+2)
   const getSaudacao = () => {
@@ -206,7 +216,7 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
     const resultados = [];
     
     // Buscar em tickets por ID
-    dashboardData.tickets.forEach(ticket => {
+    searchTickets.forEach(ticket => {
       if (ticket.id.toLowerCase().includes(valor.toLowerCase()) ||
           ticket.solicitante.toLowerCase().includes(valor.toLowerCase()) ||
           ticket.problema.toLowerCase().includes(valor.toLowerCase()) ||
@@ -221,13 +231,13 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
           descricao: `${ticket.tipo} - ${ticket.problema}`,
           detalhes: `Solicitante: ${ticket.solicitante} | Status: ${ticket.status}`,
           icon: FiFileText,
-          cor: ticket.status === 'Activo' ? 'red' : ticket.status === 'Alocados' ? 'orange' : 'green'
+          cor: ticket.status === 'Activo' ? 'red' : (ticket.status === 'Alocados' || ticket.status === 'Em andamento') ? 'orange' : 'green'
         });
       }
     });
     
     // Buscar em departamentos
-    dashboardData.departamentos.forEach(dept => {
+    departamentosBusca.forEach(dept => {
       if (dept.nome.toLowerCase().includes(valor.toLowerCase())) {
         resultados.push({
           tipo: 'departamento',
@@ -249,8 +259,8 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
         tipo: 'estatistica',
         id: 'estatisticas',
         titulo: 'Estatísticas Gerais',
-        descricao: `${dashboardData.estatisticas.total} tickets total`,
-        detalhes: `${dashboardData.estatisticas.activos} activos, ${dashboardData.estatisticas.fechados} fechados`,
+        descricao: `${estatisticasBusca.total} tickets total`,
+        detalhes: `${estatisticasBusca.activos} activos, ${estatisticasBusca.fechados} fechados`,
         icon: FiTrendingUp,
         cor: 'purple'
       });
@@ -326,8 +336,8 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
   // Logout
   const handleLogout = () => {
     if (window.confirm('Tem certeza que deseja sair do sistema?')) {
-      console.log('Logout realizado');
-      navigate('/login');
+      onLogout?.();
+      navigate('/login', { replace: true });
     }
   };
 
@@ -425,7 +435,8 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
           {/* Saudação e Hora */}
           <div className="text-left">
             <p className="text-lg font-semibold text-gray-800">
-              {getSaudacao()}, <span className="text-[#106a37]">Departamento de IT</span>
+              {getSaudacao()},{' '}
+              <span className="text-[#106a37]">{user?.nome || 'Utilizador'}</span>
             </p>
             <p className="text-sm text-gray-500 flex items-center gap-1">
               <span className="text-[#106a37] font-medium">{horaAtual}</span>
@@ -690,8 +701,12 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
               aria-label="Menu do usuário"
             >
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-gray-800">Departamento de IT</p>
-                <p className="text-xs text-gray-500 truncate max-w-[120px]">info@imperialinsurance-mz.com</p>
+                <p className="text-sm font-medium text-gray-800 truncate max-w-[140px]">
+                  {user?.nome || 'Conta'}
+                </p>
+                <p className="text-xs text-gray-500 truncate max-w-[140px]">
+                  {user?.email || ''}
+                </p>
               </div>
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#106a37] to-[#0d5a2c] flex items-center justify-center text-white font-semibold cursor-pointer hover:shadow-lg transition-shadow shadow-md hover:shadow-xl">
                 <FiUser className="w-5 h-5" />
@@ -703,8 +718,8 @@ const Header = ({ onToggleMenu, isMenuOpen }) => {
               <div className="usuario-menu absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 animate-fade-in">
                 <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
                   <div className="min-w-0">
-                    <p className="font-semibold text-gray-800 truncate">Departamento de IT</p>
-                    <p className="text-sm text-gray-500 truncate">info@imperialinsurance-mz.com</p>
+                    <p className="font-semibold text-gray-800 truncate">{user?.nome || 'Conta'}</p>
+                    <p className="text-sm text-gray-500 truncate">{user?.email || ''}</p>
                   </div>
                   <button
                     onClick={() => setMostrarMenuUsuario(false)}

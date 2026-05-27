@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTickets } from '../contextos/TicketsContext.jsx';
 import { 
   FiDownload, 
   FiCalendar,
@@ -20,19 +21,70 @@ import logo from "../assets/logo.png";
 // Cores da marca
 const BRAND_GREEN = '#106a37';
 
-// Dados mock para demonstração
-const ticketsData = [
-  { id: 'T-1021', type: 'Assistência', department: 'IT', requester: 'Elton Matsinhe', province: 'Maputo Cidade', problem: 'VPN não conecta', status: 'Activo', createdAt: '2025-12-14T09:10:00Z' },
-  { id: 'T-1020', type: 'Requisição', department: 'Comercial', requester: 'Clara Uamusse', province: 'Sofala', problem: 'Requisição de portátil', status: 'Alocados', createdAt: '2025-12-13T15:35:00Z' },
-  { id: 'T-1019', type: 'Assistência', department: 'Sinistro', requester: 'Rafael Mabjaia', province: 'Nampula', problem: 'Erro no ERP', status: 'Fechado', createdAt: '2025-12-12T11:50:00Z' },
-  { id: 'T-1018', type: 'Assistência', department: 'RH', requester: 'Sílvia Macuácua', province: 'Maputo Cidade', problem: 'Email bloqueado', status: 'Activo', createdAt: '2025-12-12T09:30:00Z' },
-  { id: 'T-1017', type: 'Requisição', department: 'Contabilidade', requester: 'Maria João', province: 'Gaza', problem: 'Software contabilístico', status: 'Fechado', createdAt: '2025-12-11T14:20:00Z' },
-  { id: 'T-1016', type: 'Assistência', department: 'Risco e Conformidade', requester: 'Jorge Tembe', province: 'Maputo Província', problem: 'Acesso ao sistema', status: 'Alocados', createdAt: '2025-12-10T11:15:00Z' },
-  { id: 'T-1015', type: 'Requisição', department: 'Subscrição', requester: 'Paulo Sitoi', province: 'Inhambane', problem: 'Equipamento novo', status: 'Activo', createdAt: '2025-12-09T14:45:00Z' },
-  { id: 'T-1014', type: 'Assistência', department: 'Crédit Control', requester: 'Luísa Cuambe', province: 'Sofala', problem: 'Problema de impressora', status: 'Fechado', createdAt: '2025-12-08T10:20:00Z' },
+const MESES_CURTOS = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez',
 ];
 
+/** YYYY-MM-DD no fuso local (evita cortar o dia errado vs `toISOString()` em UTC). */
+function dataLocalYYYYMMDD(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function filterTicketsPorPeriodo(lista, dataInicio, dataFim) {
+  const arr = Array.isArray(lista) ? lista : [];
+  if (!dataInicio || !dataFim) return arr;
+  return arr.filter((ticket) => {
+    const key = dataLocalYYYYMMDD(ticket.createdAt);
+    if (!key) return false;
+    return key >= dataInicio && key <= dataFim;
+  });
+}
+
+/** Por defeito: últimos 24 meses até hoje (cobre dados antigos em dev e produção). */
+function periodoPadraoLargo() {
+  const fim = new Date();
+  const inicio = new Date();
+  inicio.setMonth(inicio.getMonth() - 24);
+  return {
+    inicio: dataLocalYYYYMMDD(inicio),
+    fim: dataLocalYYYYMMDD(fim),
+  };
+}
+
+function monthlySeriesFromTickets(ticketsFiltrados) {
+  const now = new Date();
+  const series = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const count = ticketsFiltrados.filter((t) => {
+      const k = dataLocalYYYYMMDD(t.createdAt);
+      return k && k.startsWith(ym);
+    }).length;
+    series.push({ month: MESES_CURTOS[d.getMonth()], tickets: count });
+  }
+  return series;
+}
+
 const Relatorios = () => {
+  const { tickets, loading, error, refresh } = useTickets();
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [tipoRelatorio, setTipoRelatorio] = useState('completo');
@@ -43,46 +95,22 @@ const Relatorios = () => {
   const [departamentoData, setDepartamentoData] = useState([]);
   const [monthlyData, setMonthlyData] = useState([]);
   
-  // Dados para gráfico de evolução mensal
-  const generateMonthlyData = () => {
-    return [
-      { month: 'Jan', tickets: 12 },
-      { month: 'Fev', tickets: 18 },
-      { month: 'Mar', tickets: 15 },
-      { month: 'Abr', tickets: 22 },
-      { month: 'Mai', tickets: 25 },
-      { month: 'Jun', tickets: 30 },
-      { month: 'Jul', tickets: 28 },
-      { month: 'Ago', tickets: 32 },
-      { month: 'Set', tickets: 35 },
-      { month: 'Out', tickets: 38 },
-      { month: 'Nov', tickets: 42 },
-      { month: 'Dez', tickets: 45 }
-    ];
-  };
-
-  // Inicializar datas
+  // Inicializar período (últimos 24 meses)
   useEffect(() => {
-    const hoje = new Date().toISOString().split('T')[0];
-    const primeiroDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-    
-    setDataInicio(primeiroDiaMes);
-    setDataFim(hoje);
-    setMonthlyData(generateMonthlyData());
+    const { inicio, fim } = periodoPadraoLargo();
+    setDataInicio(inicio);
+    setDataFim(fim);
   }, []);
 
   // Calcular estatísticas
   useEffect(() => {
-    const ticketsFiltrados = ticketsData.filter(ticket => {
-      if (!dataInicio || !dataFim) return true;
-      
-      const dataTicket = new Date(ticket.createdAt).toISOString().split('T')[0];
-      return dataTicket >= dataInicio && dataTicket <= dataFim;
-    });
+    const ticketsFiltrados = filterTicketsPorPeriodo(tickets, dataInicio, dataFim);
 
     const total = ticketsFiltrados.length;
     const active = ticketsFiltrados.filter(t => t.status === 'Activo').length;
-    const alocados = ticketsFiltrados.filter(t => t.status === 'Alocados').length;
+    const alocados = ticketsFiltrados.filter(
+      (t) => t.status === 'Alocados' || t.status === 'Em andamento'
+    ).length;
     const closed = ticketsFiltrados.filter(t => t.status === 'Fechado').length;
     const activity = Math.round((closed / total) * 100) || 0;
 
@@ -96,15 +124,11 @@ const Relatorios = () => {
       tipoRequisicao: ticketsFiltrados.filter(t => t.type === 'Requisição').length,
     });
 
-    // Dados por província
-    const provinces = [
-      'Maputo Cidade', 'Maputo Província', 'Gaza', 'Inhambane', 'Sofala',
-      'Manica', 'Tete', 'Zambézia', 'Nampula', 'Cabo Delgado', 'Niassa'
-    ];
-    
+    // Dados por província (a partir dos tickets)
     const provinciaCount = {};
-    provinces.forEach(province => {
-      provinciaCount[province] = ticketsFiltrados.filter(t => t.province === province).length;
+    ticketsFiltrados.forEach((t) => {
+      const p = t.province || '—';
+      provinciaCount[p] = (provinciaCount[p] || 0) + 1;
     });
     
     const provinciaChartData = Object.entries(provinciaCount)
@@ -115,14 +139,10 @@ const Relatorios = () => {
     setProvinciaData(provinciaChartData);
 
     // Dados por departamento
-    const departments = [
-      'Departamento de IT', 'Crédit Control', 'Risco e Conformidade', 'RH',
-      'Contabilidade', 'Comercial', 'Júridico', 'Subscrição', 'Sinistro'
-    ];
-    
     const departamentoCount = {};
-    departments.forEach(dept => {
-      departamentoCount[dept] = ticketsFiltrados.filter(t => t.department === dept).length;
+    ticketsFiltrados.forEach((t) => {
+      const d = t.department || '—';
+      departamentoCount[d] = (departamentoCount[d] || 0) + 1;
     });
     
     const departamentoChartData = Object.entries(departamentoCount)
@@ -131,7 +151,8 @@ const Relatorios = () => {
       .slice(0, 5);
     
     setDepartamentoData(departamentoChartData);
-  }, [dataInicio, dataFim]);
+    setMonthlyData(monthlySeriesFromTickets(ticketsFiltrados));
+  }, [dataInicio, dataFim, tickets]);
 
   // Formatador de data
   const formatDate = (dateString) => {
@@ -148,7 +169,7 @@ const Relatorios = () => {
 
   // Função para criar gráfico de barras em HTML (simulado)
   const createBarChartHTML = (data, title) => {
-    const maxValue = Math.max(...data.map(d => d.tickets));
+    const maxValue = Math.max(1, ...data.map((d) => d.tickets));
     
     return `
       <div style="margin-top: 10px;">
@@ -171,9 +192,12 @@ const Relatorios = () => {
 
   // Função para criar gráfico de pizza em HTML (simulado)
   const createPieChartHTML = (assistencia, requisicao) => {
-    const total = assistencia + requisicao;
-    const assistenciaPercent = Math.round((assistencia / total) * 100) || 0;
-    const requisicaoPercent = Math.round((requisicao / total) * 100) || 0;
+    const total = (assistencia || 0) + (requisicao || 0);
+    if (total === 0) {
+      return '<p style="font-size:12px;color:#666;">Sem dados de tipo no período.</p>';
+    }
+    const assistenciaPercent = Math.round(((assistencia || 0) / total) * 100) || 0;
+    const requisicaoPercent = Math.round(((requisicao || 0) / total) * 100) || 0;
     
     return `
       <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 10px;">
@@ -303,11 +327,11 @@ const Relatorios = () => {
 
       // Função para criar conteúdo da página 2
       const createPage2Content = () => {
-        const ticketsFiltrados = ticketsData.filter(ticket => {
-          if (!dataInicio || !dataFim) return true;
-          const dataTicket = new Date(ticket.createdAt).toISOString().split('T')[0];
-          return dataTicket >= dataInicio && dataTicket <= dataFim;
-        });
+        const ticketsFiltrados = filterTicketsPorPeriodo(
+          tickets,
+          dataInicio,
+          dataFim
+        );
 
         return `
           <div style="max-width: 210mm; margin: 0 auto; min-height: 250mm;">
@@ -450,7 +474,7 @@ const Relatorios = () => {
                 <h4 style="font-size: 14px; font-weight: bold; color: #333; margin-bottom: 12px;">
                   Distribuição por Tipo de Ticket
                 </h4>
-                ${createPieChartHTML(estatisticas.tipoAssistencia || 5, estatisticas.tipoRequisicao || 3)}
+                ${createPieChartHTML(estatisticas.tipoAssistencia || 0, estatisticas.tipoRequisicao || 0)}
                 <div style="display: flex; justify-content: center; gap: 20px; margin-top: 12px; font-size: 12px;">
                   <div><strong>Assistência:</strong> ${Math.round(((estatisticas.tipoAssistencia || 0) / (estatisticas.total || 1)) * 100)}%</div>
                   <div><strong>Requisição:</strong> ${Math.round(((estatisticas.tipoRequisicao || 0) / (estatisticas.total || 1)) * 100)}%</div>
@@ -611,11 +635,11 @@ const Relatorios = () => {
         ['ID', 'Tipo', 'Departamento', 'Solicitante', 'Província', 'Problema', 'Status', 'Data Criação']
       ];
 
-      const ticketsFiltrados = ticketsData.filter(ticket => {
-        if (!dataInicio || !dataFim) return true;
-        const dataTicket = new Date(ticket.createdAt).toISOString().split('T')[0];
-        return dataTicket >= dataInicio && dataTicket <= dataFim;
-      });
+      const ticketsFiltrados = filterTicketsPorPeriodo(
+        tickets,
+        dataInicio,
+        dataFim
+      );
 
       ticketsFiltrados.forEach(ticket => {
         dadosExcel.push([
@@ -674,6 +698,21 @@ const Relatorios = () => {
         <p className="text-gray-600">
           Gere relatórios detalhados do sistema de tickets
         </p>
+        {loading && (
+          <p className="mt-2 text-sm text-gray-500">A carregar tickets da API…</p>
+        )}
+        {error && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => refresh()}
+              className="rounded-md bg-red-100 px-3 py-1 font-medium text-red-800 hover:bg-red-200"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Controles de Relatório */}
@@ -700,6 +739,9 @@ const Relatorios = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#106a37] focus:border-transparent"
               />
             </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Por defeito: <strong>últimos 24 meses</strong>. Ajuste as datas se precisar de outro intervalo.
+            </p>
           </div>
 
           {/* Tipo de Relatório */}

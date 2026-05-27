@@ -42,11 +42,17 @@ export default function EmitirTicketScreen({
   setTicketStep,
   filteredRequesters,
   assistenciaIssues,
+  /** Nomes de tipos de problema vindos da API (substitui a lista estática quando preenchido). */
+  problemOptions,
   provinces = ALL_PROVINCES, // Usa as províncias padrão se não forem passadas
   departments, // Agora deve incluir IT e Comercial
   onSubmit,
   onBack,
 }) {
+  const issuesList =
+    Array.isArray(problemOptions) && problemOptions.length > 0
+      ? problemOptions
+      : assistenciaIssues;
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const [requesterOpen, setRequesterOpen] = useState(false);
   const [problemOpen, setProblemOpen] = useState(false);
@@ -286,7 +292,7 @@ export default function EmitirTicketScreen({
           <Text style={styles.label}>
             {ticketForm.type === 'Assistência' ? 'Selecionar problema' : 'Descrever requisição'}
           </Text>
-          {ticketForm.type === 'Assistência' ? (
+          {ticketForm.type === 'Assistência' || (ticketForm.type === 'Requisição' && issuesList.length > 0) ? (
             <View style={styles.dropdown}>
               <TouchableOpacity
                 style={styles.dropdownHeader}
@@ -294,7 +300,7 @@ export default function EmitirTicketScreen({
                 onPress={() => setProblemOpen((open) => !open)}
               >
                 <Text style={styles.dropdownHeaderText}>
-                  {ticketForm.problem || 'Selecionar problema'}
+                  {ticketForm.problem || (ticketForm.type === 'Assistência' ? 'Selecionar problema' : 'Selecionar tipo de requisição')}
                 </Text>
                 <Ionicons
                   name={problemOpen ? 'chevron-up' : 'chevron-down'}
@@ -310,7 +316,7 @@ export default function EmitirTicketScreen({
                       showsVerticalScrollIndicator={true}
                       nestedScrollEnabled={true}
                     >
-                      {assistenciaIssues.map((issue) => (
+                      {issuesList.map((issue) => (
                         <TouchableOpacity
                           key={issue}
                           style={[
@@ -445,7 +451,9 @@ export default function EmitirTicketScreen({
           <Text style={styles.detailText}>
             {ticketForm.type === 'Assistência'
               ? `Problema: ${ticketForm.problem || '—'}`
-              : `Requisição: ${ticketForm.description || '—'}`}
+              : issuesList.length > 0
+                ? `Requisição: ${ticketForm.problem || '—'}`
+                : `Requisição: ${ticketForm.description || '—'}`}
           </Text>
           <Text style={styles.detailText}>Província: {ticketForm.province || '—'}</Text>
           <Text style={styles.detailText}>Observação: {ticketForm.observation || '—'}</Text>
@@ -468,7 +476,16 @@ export default function EmitirTicketScreen({
         {ticketStep === 1 ? (
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => setTicketStep(2)}
+            onPress={() => {
+              if (
+                ticketForm.type === 'Requisição' &&
+                issuesList.length > 0 &&
+                !ticketForm.problem
+              ) {
+                return;
+              }
+              setTicketStep(2);
+            }}
           >
             <Ionicons name="arrow-forward" size={16} color="#0b1f17" />
             <Text style={styles.primaryButtonText}>Avançar</Text>
